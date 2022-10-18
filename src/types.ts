@@ -7,6 +7,11 @@ export interface EndpointConfig {
   path: string,
 }
 
+export enum EPropertyNamingFormat {
+  native = "native",
+  javascript = "javascript",
+}
+
 export interface LakeConfig {
   s3Endpoint?: EndpointConfig;
   s3BucketName: string;
@@ -14,6 +19,7 @@ export interface LakeConfig {
   startBlockHeight: number;
   blocksPreloadPoolSize?: number;
   s3ForcePathStyle?: boolean;
+  propertyNamingFormat?: EPropertyNamingFormat;
 }
 
 export interface StreamerMessage {
@@ -111,21 +117,21 @@ export interface Chunk {
 
 export type ReceiptEnum =
   | {
-      Action: {
-        actions: Action[];
-        gasPrice: string;
-        inputDataIds: string[];
-        outputDataReceivers: DataReceiver[];
-        signerId: string;
-        signerPublicKey: string;
-      };
-    }
+  Action: {
+    actions: Action[];
+    gasPrice: string;
+    inputDataIds: string[];
+    outputDataReceivers: DataReceiver[];
+    signerId: string;
+    signerPublicKey: string;
+  };
+}
   | {
-      Data: {
-        data: string;
-        dataId: string;
-      };
-    };
+  Data: {
+    data: string;
+    dataId: string;
+  };
+};
 
 export type DataReceiver = {
   dataId: string,

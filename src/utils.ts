@@ -1,5 +1,5 @@
 import { Readable } from "stream";
-import { Block } from "./types";
+import { EPropertyNamingFormat } from "./types";
 
 export const sleep = (pause: number) =>
   new Promise((resolve) => setTimeout(resolve, pause));
@@ -13,10 +13,13 @@ export function normalizeBlockHeight(number: number) {
   return number.toString().padStart(12, "0");
 }
 
-export async function parseBody<T>(stream: Readable): Promise<T> {
+export async function parseBody<T>(stream: Readable, propertyNamingFormat: EPropertyNamingFormat): Promise<T> {
   const contents = await streamToString(stream);
-  const parsed: T = JSON.parse(contents, (key, value) => renameUnderscoreFieldsToCamelCase(value));
-  return parsed;
+  if (propertyNamingFormat === EPropertyNamingFormat.javascript) {
+    return JSON.parse(contents, (key, value) => renameUnderscoreFieldsToCamelCase(value));
+  }
+
+  return JSON.parse(contents);
 }
 
 // the function got from

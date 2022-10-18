@@ -6,7 +6,11 @@ import { sleep } from "./utils";
 async function* batchStream(
   config: LakeConfig
 ): AsyncIterableIterator<Promise<StreamerMessage>[]> {
-  const s3Client = new S3Client({ region: config.s3RegionName, endpoint: config.s3Endpoint, forcePathStyle: config.s3ForcePathStyle });
+  const s3Client = new S3Client({
+    region: config.s3RegionName,
+    endpoint: config.s3Endpoint,
+    forcePathStyle: config.s3ForcePathStyle
+  });
 
   let startBlockHeight = config.startBlockHeight;
 
@@ -44,7 +48,7 @@ async function* fetchAhead<T>(seq: AsyncIterable<T>, stepsAhead = 10): AsyncIter
       queue.push(seq[Symbol.asyncIterator]().next());
     }
 
-    const { value, done } = await queue.shift();
+    const {value, done} = await queue.shift();
     if (done) return;
     yield value;
   }
@@ -53,14 +57,14 @@ async function* fetchAhead<T>(seq: AsyncIterable<T>, stepsAhead = 10): AsyncIter
 export async function* stream(
   config: LakeConfig
 ): AsyncIterableIterator<StreamerMessage> {
-  const s3Client = new S3Client({ region: config.s3RegionName });
+  const s3Client = new S3Client({region: config.s3RegionName});
 
   let lastProcessedBlockHash: string;
   let startBlockHeight = config.startBlockHeight;
-  
+
   while (true) {
     try {
-      for await (let promises of fetchAhead(batchStream({ ...config, startBlockHeight }))) {
+      for await (let promises of fetchAhead(batchStream({...config, startBlockHeight}))) {
         for (let promise of promises) {
           const streamerMessage = await promise;
           // check if we have `lastProcessedBlockHash` (might be not set only on start)
@@ -89,20 +93,46 @@ export async function* stream(
   }
 }
 
-export async function startStream(
+interface IStreamContext {
+  stopStream: () => void;
+}
+
+export function startStream(
   config: LakeConfig,
-  onStreamerMessageReceived: (data: StreamerMessage) => Promise<void>
-) {
+  onStreamerMessageReceived: (data: StreamerMessage, ctx: IStreamContext) => Promise<void>
+): (() => void) {
+  const streamState = {
+    cancelled: false,
+  };
+
+  const stopStream = () => {
+    streamState.cancelled = true;
+  }
+
+  const ctx: IStreamContext = {
+    stopStream,
+  };
+
   let queue: Promise<void>[] = [];
-  for await (let streamerMessage of stream(config)) {
+
+  (async () => {
+    for await (let streamerMessage of stream(config)) {
       // `queue` here is used to achieve throttling as streamer would run ahead without a stop
       // and if we start from genesis it will spawn millions of `onStreamerMessageReceived` callbacks.
       // This implementation has a pipeline that fetches the data from S3 while `onStreamerMessageReceived`
       // is being processed, so even with a queue size of 1 there is already a benefit.
       // TODO: Reliable error propagation for onStreamerMessageReceived?
-      queue.push(onStreamerMessageReceived(streamerMessage));
+      queue.push(onStreamerMessageReceived(streamerMessage, ctx));
       if (queue.length > 10) {
         await queue.shift();
       }
-  }
+
+      if (streamState.cancelled) {
+        console.log("Cancelling Near Lake stream");
+        break;
+      }
+    }
+  })();
+
+  return stopStream;
 }

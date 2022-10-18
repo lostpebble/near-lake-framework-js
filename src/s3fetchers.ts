@@ -12,6 +12,7 @@ import {
   Block,
   Shard,
   StreamerMessage,
+  EPropertyNamingFormat,
 } from "./types";
 import { normalizeBlockHeight, parseBody } from "./utils";
 
@@ -33,7 +34,9 @@ export async function listBlocks(
       RequestPayer: "requester",
     })
   );
-  return (data.CommonPrefixes || []).map((p) => parseInt(p.Prefix.split("/")[0]));
+  return (data.CommonPrefixes || []).map((p) =>
+    parseInt(p.Prefix.split("/")[0])
+  );
 }
 
 // By the given block height gets the objects:
@@ -43,14 +46,21 @@ export async function listBlocks(
 export async function fetchStreamerMessage(
   client: S3Client,
   bucketName: string,
-  blockHeight: BlockHeight
+  blockHeight: BlockHeight,
+  propertyNamingFormat: EPropertyNamingFormat
 ): Promise<StreamerMessage> {
-  const block = await fetchBlock(client, bucketName, blockHeight);
+  const block = await fetchBlock(
+    client,
+    bucketName,
+    blockHeight,
+    propertyNamingFormat
+  );
   const shards = await fetchShards(
     client,
     bucketName,
     blockHeight,
-    block.chunks.length
+    block.chunks.length,
+    propertyNamingFormat
   );
   return { block, shards };
 }
@@ -60,7 +70,8 @@ export async function fetchStreamerMessage(
 async function fetchBlock(
   client: S3Client,
   bucketName: string,
-  blockHeight: BlockHeight
+  blockHeight: BlockHeight,
+  propertyNamingFormat: EPropertyNamingFormat
 ): Promise<Block> {
   while (true) {
     try {
@@ -71,7 +82,10 @@ async function fetchBlock(
           RequestPayer: "requester",
         })
       );
-      const block: Block = await parseBody<Block>(data.Body as Readable);
+      const block: Block = await parseBody<Block>(
+        data.Body as Readable,
+        propertyNamingFormat
+      );
       return block;
     } catch (err) {
       console.error(
@@ -88,13 +102,20 @@ async function fetchShards(
   client: S3Client,
   bucketName: string,
   blockHeight: BlockHeight,
-  numberOfShards: number
+  numberOfShards: number,
+  propertyNamingFormat: EPropertyNamingFormat
 ): Promise<Shard[]> {
   if (numberOfShards === 0) return [];
 
   return await Promise.all(
     [...Array(numberOfShards).keys()].map(async (index) =>
-      fetchSingleShard(client, bucketName, blockHeight, index)
+      fetchSingleShard(
+        client,
+        bucketName,
+        blockHeight,
+        index,
+        propertyNamingFormat
+      )
     )
   );
 }
@@ -103,7 +124,8 @@ async function fetchSingleShard(
   client: S3Client,
   bucketName: string,
   blockHeight: BlockHeight,
-  shardId: number
+  shardId: number,
+  propertyNamingFormat: EPropertyNamingFormat
 ): Promise<Shard> {
   try {
     const data = await client.send(
@@ -113,13 +135,22 @@ async function fetchSingleShard(
         RequestPayer: "requester",
       })
     );
-    const shard: Shard = await parseBody<Shard>(data.Body as Readable);
+    const shard: Shard = await parseBody<Shard>(
+      data.Body as Readable,
+      propertyNamingFormat
+    );
     return shard;
   } catch (err) {
     console.error(
       `Failed to fetch ${blockHeight}/shard_${shardId}.json. Retrying immediately`,
       err
     );
-    return await fetchSingleShard(client, bucketName, blockHeight, shardId);
+    return await fetchSingleShard(
+      client,
+      bucketName,
+      blockHeight,
+      shardId,
+      propertyNamingFormat
+    );
   }
 }
