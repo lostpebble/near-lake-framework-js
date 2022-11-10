@@ -4,7 +4,8 @@ import { EPropertyNamingFormat, LakeConfig, StreamerMessage } from "./types";
 import { sleep } from "./utils";
 
 async function* batchStream(
-  config: LakeConfig
+  config: LakeConfig,
+  streamState: IStreamState,
 ): AsyncIterableIterator<Promise<StreamerMessage>[]> {
   const s3Client = new S3Client({
     region: config.s3RegionName,
@@ -19,6 +20,10 @@ async function* batchStream(
   let startBlockHeight = config.startBlockHeight;
 
   while (true) {
+    if (streamState.cancelled) {
+      break;
+    }
+
     const results: Promise<StreamerMessage>[][] = [];
     let blockHeights;
     try {
@@ -54,33 +59,49 @@ async function* batchStream(
 
 async function* fetchAhead<T>(
   seq: AsyncIterable<T>,
-  stepsAhead = 10
+  stepsAhead = 10,
+  streamState: IStreamState,
 ): AsyncIterableIterator<T> {
   let queue = [];
   while (true) {
+    if (streamState.cancelled) {
+      break;
+    }
+
     while (queue.length < stepsAhead) {
       queue.push(seq[Symbol.asyncIterator]().next());
     }
 
-    const { value, done } = await queue.shift();
+    const {value, done} = await queue.shift();
     if (done) return;
     yield value;
   }
 }
 
 export async function* stream(
-  config: LakeConfig
+  config: LakeConfig,
+  streamState: IStreamState,
 ): AsyncIterableIterator<StreamerMessage> {
-  const s3Client = new S3Client({ region: config.s3RegionName });
+  const s3Client = new S3Client({region: config.s3RegionName});
 
   let lastProcessedBlockHash: string;
   let startBlockHeight = config.startBlockHeight;
 
   while (true) {
+    if (streamState.cancelled) {
+      break;
+    }
+
     try {
       for await (let promises of fetchAhead(
-        batchStream({ ...config, startBlockHeight })
+        batchStream({...config, startBlockHeight}, streamState),
+        10,
+        streamState,
       )) {
+        if (streamState.cancelled) {
+          break;
+        }
+
         for (let promise of promises) {
           const streamerMessage = await promise;
           // check if we have `lastProcessedBlockHash` (might be not set only on start)
@@ -118,6 +139,10 @@ interface IStreamContext {
   stopStream: () => void;
 }
 
+interface IStreamState {
+  cancelled: boolean;
+}
+
 export function startStream(
   config: LakeConfig,
   onStreamerMessageReceived: (
@@ -125,7 +150,7 @@ export function startStream(
     ctx: IStreamContext
   ) => Promise<void>
 ): () => void {
-  const streamState = {
+  const streamState: IStreamState = {
     cancelled: false,
   };
 
@@ -140,7 +165,7 @@ export function startStream(
   let queue: Promise<void>[] = [];
 
   (async () => {
-    for await (let streamerMessage of stream(config)) {
+    for await (let streamerMessage of stream(config, streamState)) {
       // `queue` here is used to achieve throttling as streamer would run ahead without a stop
       // and if we start from genesis it will spawn millions of `onStreamerMessageReceived` callbacks.
       // This implementation has a pipeline that fetches the data from S3 while `onStreamerMessageReceived`
