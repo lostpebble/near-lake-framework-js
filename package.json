@@ -25,7 +25,8 @@
     "build": "tsc",
     "dev": "tsc -w",
     "build-examples": "tsc -w --project tsconfig.examples.json",
-    "run-example": "node --inspect ./dist-examples/examples/getSomeBlocks.js"
+    "run-example-some-blocks": "node --inspect ./dist-examples/examples/getSomeBlocks.js",
+    "run-example-a-block": "node --inspect ./dist-examples/examples/getABlock.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.32.0"

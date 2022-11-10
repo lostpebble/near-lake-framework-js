@@ -67,7 +67,7 @@ export async function fetchStreamerMessage(
 
 // By the given block height gets the block.json
 // Reads the content of the objects and parses as a JSON.
-async function fetchBlock(
+export async function fetchBlock(
   client: S3Client,
   bucketName: string,
   blockHeight: BlockHeight,
